@@ -10,6 +10,6 @@ def agenda_json(agenda: Agenda):
         topics = []
         for t in s.topic_set.all().order_by("position"):
             topics.append(model_to_dict(t))
-        sections.append({"section_name": s.section_name, "topics": topics})
+        sections.append({"section_name": s.section_name,"position":s.position, "topics": topics})
     json["sections"] = sections
     return json

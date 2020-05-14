@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
-from .utils.agenda_json import agenda_json
+
 import json
 
 from django.core.exceptions import ValidationError
-from django.forms.models import model_to_dict
 from django.http import JsonResponse, Http404
 # Create your views here.
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 
-from .models import Agenda, Section, Topic
+from .models import Agenda, Section
+from .utils.agenda_json import agenda_json
 
 
 @csrf_exempt
@@ -81,29 +81,63 @@ def updateAgenda(request):
         agenda = get_object_or_404(Agenda, pk=data["agenda_id"])
         newAgenda=data["new_agenda"]
         try:
-            agenda.lc=newAgenda["lc"]
-            agenda.date=newAgenda["date"]
+            if "lc" in newAgenda:
+                agenda.lc = newAgenda["lc"]
+            if "date" in newAgenda:
+                agenda.date = newAgenda["date"]
             agenda.save()
         except:
             return JsonResponse({"status": 400, "msg": "wrong format"})
     return JsonResponse({"status":200,"agenda":agenda_json(agenda)})
 
 
+@csrf_exempt
 def updateSection(request):
-    return JsonResponse()
+    data = json.loads(request.body)
+    if "agenda_id" in data and "section_position" in data and "section_json" in data:
+        agenda = get_object_or_404(Agenda, pk=data["agenda_id"])
+        newSection = data["section_json"]
+        section = agenda.section_set.get(position=data["section_position"])
+        try:
+            if "section_name" in newSection:
+                section.section_name = newSection["section_name"]
+            if "position" in newSection:
+                old = list(agenda.section_set.all().order_by("position"))[newSection["position"]:]
+                element = old[data["section_position"]]
+                newList = []
+                index = 0
+                for s in range(len(old)):
+                    if s == data["section_position"]:
+                        continue
+                    if s == newSection["position"]:
+                        newList.append(element)
+                    newList.append(old[index])
+                    index += 1
+                for index, s in enumerate(newList):
+                    s.position = index
+                    s.save()
+                # section.position = newSection["position"]
+            section.save()
+        except:
+            return JsonResponse({"status": 400, "msg": "wrong format"})
+    return JsonResponse({"status": 200, "agenda": agenda_json(agenda)})
 
 
+@csrf_exempt
 def updateTopic(request):
     return JsonResponse()
 
 
+@csrf_exempt
 def deleteAgenda(request):
     return JsonResponse()
 
 
+@csrf_exempt
 def deleteSection(request):
     return JsonResponse()
 
 
+@csrf_exempt
 def deleteTopic(request):
     return JsonResponse()

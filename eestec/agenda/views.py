@@ -9,8 +9,9 @@ from django.http import JsonResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 
-from .models import Agenda, Section
+from .models import Agenda, Section, Topic
 from .utils.agenda_json import agenda_json
+from .utils.PositionFixing import fixPosition
 
 
 @csrf_exempt
@@ -41,14 +42,20 @@ def createSection(request):
             if "position" not in data:
                 agenda.section_set.create(section_name=data["section_name"], position=agenda.section_set.count())
             else:
-                for s in list(agenda.section_set.all().order_by("position"))[data["position"]:]:
-                    s.position += 1
+                oldList=list(agenda.section_set.all().order_by("position"))
+                normalizer=0
+                for index,s in enumerate(list(agenda.section_set.all().order_by("position"))[data["position"]:]):
+                    if index==data["position"]:
+                        normalizer+=1
+                    s.position =index+normalizer
                     s.save()
                 agenda.section_set.create(section_name=data["section_name"], position=data["position"])
             agenda.save()
         except ValidationError:
             return JsonResponse({"status": 400, "msg": "wrong format"})
-    return JsonResponse({"status": 200, "agenda": agenda_json(agenda)})
+        return JsonResponse({"status": 200, "agenda": agenda_json(agenda)})
+    else:
+        return JsonResponse({"status":400,"msg":"you didn't sent all the necessary information"})
 
 
 @csrf_exempt
@@ -72,7 +79,9 @@ def createTopic(request):
             agenda.save()
         except:
             JsonResponse({"status": 400, "msg": "you didn't sent all the necessary information"})
-    return JsonResponse({"status": 200, "agenda": agenda_json(agenda)})
+        return JsonResponse({"status": 200, "agenda": agenda_json(agenda)})
+    else:
+        return JsonResponse({"status":400,"msg":"you didn't sent all the necessary information"})
 
 @csrf_exempt
 def updateAgenda(request):
@@ -88,7 +97,9 @@ def updateAgenda(request):
             agenda.save()
         except:
             return JsonResponse({"status": 400, "msg": "wrong format"})
-    return JsonResponse({"status":200,"agenda":agenda_json(agenda)})
+        return JsonResponse({"status":200,"agenda":agenda_json(agenda)})
+    else:
+        return JsonResponse({"status":400,"msg":"you didn't sent all the necessary information"})
 
 
 @csrf_exempt
@@ -97,47 +108,115 @@ def updateSection(request):
     if "agenda_id" in data and "section_position" in data and "section_json" in data:
         agenda = get_object_or_404(Agenda, pk=data["agenda_id"])
         newSection = data["section_json"]
-        section = agenda.section_set.get(position=data["section_position"])
         try:
             if "section_name" in newSection:
+                section = get_object_or_404(Section,agenda=data["agenda_id"],position=data["section_position"])
                 section.section_name = newSection["section_name"]
+                section.save()
             if "position" in newSection:
-                old = list(agenda.section_set.all().order_by("position"))[newSection["position"]:]
+                section = get_object_or_404(Section,agenda=data["agenda_id"],position=data["section_position"])
+                old = list(agenda.section_set.all().order_by("position"))
                 element = old[data["section_position"]]
                 newList = []
                 index = 0
-                for s in range(len(old)):
-                    if s == data["section_position"]:
-                        continue
+                for s in range(len(old)+1):
                     if s == newSection["position"]:
                         newList.append(element)
+                        continue
                     newList.append(old[index])
                     index += 1
-                for index, s in enumerate(newList):
-                    s.position = index
-                    s.save()
-                # section.position = newSection["position"]
-            section.save()
+                fixPosition(newList)
+                section.position = newSection["position"]
+                section.save()
+            agenda.save()
         except:
             return JsonResponse({"status": 400, "msg": "wrong format"})
-    return JsonResponse({"status": 200, "agenda": agenda_json(agenda)})
+        return JsonResponse({"status": 200, "agenda": agenda_json(agenda)})
+    else:
+        return JsonResponse({"status":400,"msg":"you didn't sent all the necessary information"})
 
 
 @csrf_exempt
 def updateTopic(request):
-    return JsonResponse()
+    data = json.loads(request.body)
+    if "agenda_id" in data and "section_position" in data and "topic_position" in data:
+        agenda = get_object_or_404(Agenda, pk=data["agenda_id"])
+        section=get_object_or_404(Section,agenda=data["agenda_id"],position=data["section_position"])
+
+        topic=section.topic_set.get(position=data["topic_position"])
+        newTopic=data["topic_json"]
+        try:
+            if "topic_name" in newTopic:
+                topic.topic_name=newTopic["topic_name"]
+            if "votable" in newTopic:
+                topic.votable=newTopic["votable"]
+            if "yes_no_vote" in newTopic:
+                topic.yes_no_vote=newTopic["yes_no_vote"]
+            if "open_ballot" in newTopic:
+                topic.open_ballot=newTopic["open_ballot"]
+            if "possible_answers" in newTopic:
+                topic.set_answers(newTopic["possible_answers"])
+            topic.save()
+            if "position" in newTopic:
+                #Todo: make this a function and use it in everything
+                old = list(section.topic_set.all().order_by("position"))
+                element = old[data["topic_position"]]
+                newList = []
+                index = 0
+                for s in range(len(old)+1):
+                    if s == newTopic["position"]:
+                        newList.append(element)
+                        continue
+                    newList.append(old[index])
+                    index += 1
+                fixPosition(newList)
+        except:
+            return JsonResponse({"status": 400, "msg": "wrong format"})
+        return JsonResponse({"status": 200, "agenda": agenda_json(agenda)})
+    else:
+        return JsonResponse({"status":400,"msg":"you didn't sent all the necessary information"})
 
 
 @csrf_exempt
 def deleteAgenda(request):
-    return JsonResponse()
+    data = json.loads(request.body)
+    if "agenda_id" in data:
+        agenda=get_object_or_404(Agenda,pk=data["agenda_id"])
+        try:
+            agenda.delete()
+        except:
+            return JsonResponse({"status":500,"msg":"Couldnt delete it due to internal problem"})
+        return JsonResponse({"status":200})
+    return JsonResponse({"status":400,"msg":"you didn't sent all the necessary information"})
 
 
 @csrf_exempt
 def deleteSection(request):
-    return JsonResponse()
+    data = json.loads(request.body)
+    if "agenda_id" in data and "section_position" in data:
+        agenda=get_object_or_404(Agenda,pk=data["agenda_id"])
+        section=get_object_or_404(Section,agenda=agenda.id,position=data["section_position"])
+        try:
+            section.delete()
+            fixPosition(agenda.section_set.all().order_by("position"))
+        except:
+            return JsonResponse({"status":500,"msg":"Couldnt delete it due to internal problem"})
+        return JsonResponse({"status":200})
+    return JsonResponse({"status":400,"msg":"you didn't sent all the necessary information"})
 
 
 @csrf_exempt
 def deleteTopic(request):
-    return JsonResponse()
+    data = json.loads(request.body)
+    if "agenda_id" in data and "section_position" in data and "topic_position" in data:
+        agenda=get_object_or_404(Agenda,pk=data["agenda_id"])
+        section=get_object_or_404(Section,agenda=agenda.id, position=data["section_position"])
+        topic=get_object_or_404(Topic,section=section.id,position=data["topic_position"])
+        try:
+            topic.delete()
+            fixPosition(section.topic_set.all().order_by("position"))
+        except:
+            return JsonResponse({"status":500,"msg":"Couldnt delete it due to internal problem"})
+        return JsonResponse({"status":200})
+    return JsonResponse({"status":400,"msg":"you didn't sent all the necessary information"})
+
